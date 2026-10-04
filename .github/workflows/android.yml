@@ -1,4 +1,4 @@
-name: Android CI
+name: Project CI
 
 on:
   push:
@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check backend Python syntax
+        run: python3 -m py_compile backend/main.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -36,7 +39,7 @@ jobs:
         with:
           gradle-version: '8.0.2'
 
-      - name: Run unit tests
+      - name: Run Android unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
 
       - name: Build debug APK

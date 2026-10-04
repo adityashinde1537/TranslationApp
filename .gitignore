@@ -21,6 +21,19 @@ local.properties
 *.aar
 *.ap_
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+backend/translations.db
+backend/translations.db-*
+
+# Hugging Face caches
+.huggingface/
+hf-cache/
+
 # Logs and diagnostics
 *.log
 *.hprof
