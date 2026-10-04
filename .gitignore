@@ -1,43 +1,38 @@
-# Gradle files
+# Gradle
 .gradle/
 build/
-*.apk
-*.aar
-*.ap_
-*.aab
+**/build/
+.kotlinc/
+.kotlin/
 
-# Local configuration file (sdk path, etc)
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local machine configuration
 local.properties
 
-# Log/OS Files
+# Build outputs
+*.apk
+*.aab
+*.aar
+*.ap_
+
+# Logs and diagnostics
 *.log
+*.hprof
 
-# Android Studio generated files and folders
-.idea/
-.DS_Store
-*.idb
-*.iml
-*.swp
-
-# Keystore files
+# Signing files
 *.jks
 *.keystore
 
-# Google Services (e.g. APIs or Firebase)
+# Service configuration
 google-services.json
 
-# Freeline
-freeline.py
-freeline/
-freeline_project_description.json
-
-# fastlane
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots
-fastlane/**/fastlane.json
-fastlane/test_output
-
-# Version control
-.git/
-.gitignore
+# OS / editor files
+.DS_Store
+Thumbs.db
+*.swp

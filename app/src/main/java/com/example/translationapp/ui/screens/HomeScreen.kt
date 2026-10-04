@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -13,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -21,7 +23,7 @@ fun HomeScreen(onNavigateToTranslation: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -31,23 +33,24 @@ fun HomeScreen(onNavigateToTranslation: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Text(
-            text = "Welcome to the Translation App",
-            fontSize = 18.sp,
+            text = "A clean Jetpack Compose prototype for experimenting with multilingual translation workflows.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground
         )
-        
+
         Spacer(modifier = Modifier.height(32.dp))
-        
+
         Button(
             onClick = onNavigateToTranslation,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "Go to Translation",
+                text = "Start translating",
                 fontSize = 16.sp
             )
         }
