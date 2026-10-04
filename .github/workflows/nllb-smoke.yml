@@ -1,4 +1,4 @@
-name: NLLB Output Smoke Test
+name: IndicTrans2 Output Smoke Test
 
 on:
   push:
@@ -25,16 +25,15 @@ jobs:
       - name: Install CPU inference dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --index-url https://download.pytorch.org/whl/cpu torch
-          pip install transformers==4.51.3 sentencepiece protobuf
+          pip install onnxruntime tokenizers huggingface-hub
 
-      - name: Translate Hindi to Santhali
+      - name: Translate Hindi to Santali
         run: |
           python - <<'PY'
-          import torch
-          from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+          import importlib.util
+          from huggingface_hub import hf_hub_download
 
-          model_name = "facebook/nllb-200-distilled-600M"
+          model_id = "hari31416/indictrans2-indic-indic-dist-320M-ONNX-int8"
           source_lang = "hin_Deva"
           target_lang = "sat_Olck"
           samples = [
@@ -43,30 +42,23 @@ jobs:
               "आज मौसम अच्छा है।",
           ]
 
-          print("MODEL:", model_name)
+          helper_path = hf_hub_download(repo_id=model_id, filename="translate.py")
+          spec = importlib.util.spec_from_file_location("indictrans_onnx", helper_path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          model = module.IndicTransONNX(model_id)
+
+          print("MODEL:", model_id)
           print("SOURCE:", source_lang)
           print("TARGET:", target_lang)
 
-          tokenizer = AutoTokenizer.from_pretrained(
-              model_name,
-              src_lang=source_lang,
-              tgt_lang=target_lang,
-          )
-          model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-          model.eval()
-
-          target_token_id = tokenizer.convert_tokens_to_ids(target_lang)
-
           for text in samples:
-              encoded = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-              with torch.inference_mode():
-                  generated = model.generate(
-                      **encoded,
-                      forced_bos_token_id=target_token_id,
-                      max_new_tokens=96,
-                      num_beams=1,
-                  )
-              output = tokenizer.batch_decode(generated, skip_special_tokens=True)[0].strip()
+              output = model.translate(
+                  text,
+                  src_lang=source_lang,
+                  tgt_lang=target_lang,
+              )
               print("INPUT:", text)
               print("OUTPUT:", output)
               print("---")
