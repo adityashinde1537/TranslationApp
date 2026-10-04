@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible problem in TranslationApp
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TranslationApp.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest set of steps that reproduces the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      placeholder: Android 14
+
+  - type: input
+    id: device
+    attributes:
+      label: Device or emulator
+      placeholder: Pixel 7 emulator
