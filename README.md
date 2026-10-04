@@ -1,78 +1,96 @@
-# Translation App
+<div align="center">
 
-A basic Android application with Home and Translation screens built with Jetpack Compose.
+# Translation App
+### An Android translation interface built with Kotlin & Jetpack Compose
+
+A learning project exploring declarative UI, navigation, and local state.
+
+**Kotlin · Jetpack Compose · Material 3 · Android**
+
+[Explore the code](app/src/main/java/com/example/translationapp) · [Report an issue](https://github.com/adityashinde1537/TranslationApp/issues)
+
+</div>
+
+---
+
+## Overview
+
+Translation App is a two-screen Android prototype with a welcome screen and an interactive translation interface. It demonstrates text input, language selection, screen navigation, and result display using Jetpack Compose.
+
+> **Project status:** UI prototype. The Translate button currently prefixes the input with the selected language, such as `[Spanish] Hello`. A translation engine or API has not been integrated.
 
 ## Features
 
-- **Home Screen**: Welcome screen with navigation to Translation screen
-- **Translation Screen**: 
-  - Input text field for entering text to translate
-  - Language selection (Spanish, French, German)
-  - Translate button
-  - Display translated text
-  - Back navigation
+| Feature | Current behavior |
+| --- | --- |
+| Home screen | Welcome message and navigation to the translation screen |
+| Text input | Multiline field for entering text |
+| Language selection | Spanish, French, and German options |
+| Result display | Read-only output showing the selected language and original text |
+| Navigation | Forward navigation and a back button |
 
-## Technology Stack
+## Technology
 
-- **Language**: Kotlin
-- **UI Framework**: Jetpack Compose
-- **Navigation**: Jetpack Compose Navigation
-- **Target SDK**: Android 14 (API 34)
-- **Min SDK**: Android 7.0 (API 24)
+| Component | Technology |
+| --- | --- |
+| Language | Kotlin |
+| Interface | Jetpack Compose and Material 3 |
+| Navigation | Navigation Compose |
+| State | Compose remember and mutableStateOf |
+| Android support | Android 7.0+ (minimum SDK 24) |
+| Compile / target SDK | 34 |
 
-## Project Structure
+## Getting started
 
-```
-TranslationApp/
-├── app/
-│   ├── src/
-│   │   └── main/
-│   │       ├── java/com/example/translationapp/
-│   │       │   ├── MainActivity.kt
-│   │       │   └── ui/
-│   │       │       ├── screens/
-│   │       │       │   ├── HomeScreen.kt
-│   │       │       │   └── TranslationScreen.kt
-│   │       │       └── theme/
-│   │       │           ├── Theme.kt
-│   │       │           ├── Color.kt
-│   │       │           └── Type.kt
-│   │       ├── res/
-│   │       │   ├── values/
-│   │       │   │   ├── strings.xml
-│   │       │   │   └── themes.xml
-│   │       │   └── mipmap/
-│   │       └── AndroidManifest.xml
-│   ├── build.gradle
-│   └── proguard-rules.pro
-├── build.gradle
-├── settings.gradle
-└── README.md
-```
+1. Clone this repository:
 
-## Getting Started
+   ```bash
+   git clone https://github.com/adityashinde1537/TranslationApp.git
+   ```
 
-1. Clone the repository
-2. Open the project in Android Studio
-3. Build and run the application on an emulator or physical device
+2. Open the project folder in Android Studio.
+3. Install Android SDK 34 if prompted and sync the Gradle project.
+4. Select an emulator or physical device running Android 7.0 or later.
+5. Run the app configuration.
 
-## Building
+Build compatibility depends on the local Android Studio, JDK, and Gradle setup. A Gradle wrapper is not included in the current repository, so wrapper commands require adding a compatible wrapper first.
 
-```bash
-./gradlew build
-```
+## Code guide
 
-## Running
+Key source files live in `app/src/main/java/com/example/translationapp/`:
 
-```bash
-./gradlew installDebug
-```
+| File or folder | Purpose |
+| --- | --- |
+| MainActivity.kt | Application entry point |
+| ui/screens/HomeScreen.kt | Welcome screen |
+| ui/screens/TranslationScreen.kt | Input, language selection, and placeholder output |
+| ui/theme/ | Theme, colors, and typography |
 
-## Future Enhancements
+Android configuration and dependencies are defined in `app/build.gradle`.
 
-- Integration with translation API (Google Translate, etc.)
-- Translation history
-- Favorites/bookmarks
-- Dark mode support
-- Multiple language pairs
-- Text-to-speech functionality
+## Try the interface
+
+1. Open the app and choose **Go to Translation**.
+2. Enter **Hello**.
+3. Select **French**, then choose **Translate**.
+4. The current prototype displays **[French] Hello**.
+5. Use the back button to return to the home screen.
+
+## Planned improvements
+
+- [ ] Connect a translation API or on-device model
+- [ ] Add loading, error, and empty-input states
+- [ ] Add translation history and saved phrases
+- [ ] Support more language pairs
+- [ ] Add text-to-speech playback
+- [ ] Add screenshots and a verified build guide
+
+These items are planned work, not implemented features.
+
+## Feedback
+
+Suggestions and reproducible bug reports are welcome through [GitHub Issues](https://github.com/adityashinde1537/TranslationApp/issues). Include the Android version, steps to reproduce, and expected behavior.
+
+---
+
+Created by [Aditya](https://github.com/adityashinde1537).
