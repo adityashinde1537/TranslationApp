@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: hindi-santhali-translation-api
+    runtime: docker
+    rootDir: backend
+    plan: 1c-2g
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: MODEL_NAME
+        value: facebook/nllb-200-distilled-600M
+      - key: MAX_INPUT_CHARS
+        value: "1500"
+      - key: MAX_NEW_TOKENS
+        value: "256"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: LOG_LEVEL
+        value: INFO
