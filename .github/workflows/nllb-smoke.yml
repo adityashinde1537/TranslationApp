@@ -25,7 +25,7 @@ jobs:
       - name: Install CPU inference dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install onnxruntime tokenizers huggingface-hub IndicTransToolkit
+          pip install onnxruntime huggingface-hub IndicTransToolkit 'transformers>=4.54,<5'
 
       - name: Translate Hindi to Santali
         run: |
