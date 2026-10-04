@@ -28,19 +28,29 @@ fun HomeScreen(onNavigateToTranslation: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Translation App",
+            text = "Hindi → Santhali",
             fontSize = 32.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "A clean Jetpack Compose prototype for experimenting with multilingual translation workflows.",
+            text = "Translate Hindi text into Santhali written in the Ol Chiki script.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Powered by an NLLB translation service with local result caching.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(32.dp))
