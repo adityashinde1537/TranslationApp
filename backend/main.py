@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import logging
 import os
 import sqlite3
@@ -7,19 +8,25 @@ import time
 from pathlib import Path
 from typing import Any
 
-import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from huggingface_hub import snapshot_download
 from pydantic import BaseModel, Field
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-MODEL_NAME = os.getenv("MODEL_NAME", "facebook/nllb-200-distilled-600M")
+MODEL_NAME = os.getenv(
+    "MODEL_NAME",
+    "hari31416/indictrans2-indic-indic-dist-320M-ONNX-int8",
+)
+MODEL_REVISION = os.getenv(
+    "MODEL_REVISION",
+    "b04956dee2f2a3e06e44bf09f8d654a6b81af99a",
+)
 SOURCE_LANGUAGE_CODE = "hin_Deva"
 TARGET_LANGUAGE_CODE = "sat_Olck"
 SOURCE_LANGUAGE_NAME = "Hindi"
 TARGET_LANGUAGE_NAME = "Santhali (Ol Chiki)"
 MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "1500"))
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "256"))
+MIN_OL_CHIKI_RATIO = float(os.getenv("MIN_OL_CHIKI_RATIO", "0.50"))
 
 DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "translations.db"
 CACHE_DB_PATH = Path(os.getenv("TRANSLATION_CACHE_DB", str(DEFAULT_CACHE_PATH)))
@@ -29,8 +36,11 @@ logger = logging.getLogger("translation-backend")
 
 app = FastAPI(
     title="Hindi to Santhali Translation API",
-    version="1.0.0",
-    description="NLLB-powered Hindi to Santhali (Ol Chiki) translation service.",
+    version="2.0.0",
+    description=(
+        "IndicTrans2 INT8 ONNX-powered Hindi to Santhali "
+        "(Ol Chiki) translation service."
+    ),
 )
 
 cors_value = os.getenv("CORS_ORIGINS", "*")
@@ -47,12 +57,8 @@ app.add_middleware(
 )
 
 _model: Any | None = None
-_tokenizer: Any | None = None
-_target_token_id: int | None = None
 _runtime_lock = threading.Lock()
 _inference_lock = threading.Lock()
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class TranslationRequest(BaseModel):
@@ -75,10 +81,11 @@ class TranslationResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model: str
+    model_revision: str
     model_loaded: bool
     source_language_code: str
     target_language_code: str
-    device: str
+    runtime: str
 
 
 def init_cache() -> None:
@@ -105,6 +112,7 @@ def cache_key_for(text: str) -> str:
     value = "|".join(
         [
             MODEL_NAME,
+            MODEL_REVISION,
             SOURCE_LANGUAGE_CODE,
             TARGET_LANGUAGE_CODE,
             text,
@@ -147,7 +155,7 @@ def save_translation(text: str, translated_text: str) -> None:
                     key,
                     text,
                     translated_text,
-                    MODEL_NAME,
+                    f"{MODEL_NAME}@{MODEL_REVISION}",
                     SOURCE_LANGUAGE_CODE,
                     TARGET_LANGUAGE_CODE,
                 ),
@@ -157,62 +165,99 @@ def save_translation(text: str, translated_text: str) -> None:
         logger.exception("Translation cache write failed")
 
 
-def get_runtime() -> tuple[Any, Any, int]:
-    global _model, _tokenizer, _target_token_id
+def _load_runtime_from_snapshot(snapshot_path: str) -> Any:
+    helper_path = Path(snapshot_path) / "translate.py"
+    if not helper_path.exists():
+        raise RuntimeError("IndicTrans2 ONNX helper was not found in the model snapshot.")
 
-    if _model is not None and _tokenizer is not None and _target_token_id is not None:
-        return _model, _tokenizer, _target_token_id
+    spec = importlib.util.spec_from_file_location(
+        "translationapp_indictrans_onnx",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load IndicTrans2 ONNX helper module.")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    runtime_class = getattr(module, "IndicTransONNX", None)
+    if runtime_class is None:
+        raise RuntimeError("IndicTransONNX runtime class is unavailable.")
+
+    return runtime_class(snapshot_path)
+
+
+def get_runtime() -> Any:
+    global _model
+
+    if _model is not None:
+        return _model
 
     with _runtime_lock:
-        if _model is None or _tokenizer is None or _target_token_id is None:
-            logger.info("Loading translation model %s on %s", MODEL_NAME, DEVICE)
-
-            tokenizer = AutoTokenizer.from_pretrained(
+        if _model is None:
+            logger.info(
+                "Downloading/loading translation model %s at revision %s",
                 MODEL_NAME,
-                src_lang=SOURCE_LANGUAGE_CODE,
-                tgt_lang=TARGET_LANGUAGE_CODE,
+                MODEL_REVISION,
             )
-            model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
-            model.to(DEVICE)
-            model.eval()
+            snapshot_path = snapshot_download(
+                repo_id=MODEL_NAME,
+                revision=MODEL_REVISION,
+            )
+            _model = _load_runtime_from_snapshot(snapshot_path)
+            logger.info("IndicTrans2 ONNX translation model loaded")
 
-            target_token_id = tokenizer.convert_tokens_to_ids(TARGET_LANGUAGE_CODE)
-            if target_token_id is None or target_token_id == tokenizer.unk_token_id:
-                raise RuntimeError(
-                    f"Target language token {TARGET_LANGUAGE_CODE} is unavailable."
-                )
+    return _model
 
-            _tokenizer = tokenizer
-            _model = model
-            _target_token_id = int(target_token_id)
 
-            logger.info("Translation model loaded")
+def ol_chiki_letter_ratio(text: str) -> float:
+    alphabetic = [character for character in text if character.isalpha()]
+    if not alphabetic:
+        return 0.0
 
-    return _model, _tokenizer, _target_token_id
+    ol_chiki_letters = sum(
+        1
+        for character in alphabetic
+        if 0x1C5A <= ord(character) <= 0x1C7F
+    )
+    return ol_chiki_letters / len(alphabetic)
+
+
+def has_meaningful_ol_chiki(text: str) -> bool:
+    ol_chiki_letters = sum(
+        1
+        for character in text
+        if 0x1C5A <= ord(character) <= 0x1C7F
+    )
+    return (
+        ol_chiki_letters >= 2
+        and ol_chiki_letter_ratio(text) >= MIN_OL_CHIKI_RATIO
+    )
 
 
 def translate_text(text: str) -> str:
-    model, tokenizer, target_token_id = get_runtime()
+    runtime = get_runtime()
 
-    encoded = tokenizer(
-        text,
-        return_tensors="pt",
-        truncation=True,
-        max_length=512,
-    ).to(DEVICE)
-
-    with _inference_lock, torch.inference_mode():
-        generated = model.generate(
-            **encoded,
-            forced_bos_token_id=target_token_id,
-            max_new_tokens=MAX_NEW_TOKENS,
-            num_beams=1,
+    with _inference_lock:
+        translated = runtime.translate(
+            text,
+            src_lang=SOURCE_LANGUAGE_CODE,
+            tgt_lang=TARGET_LANGUAGE_CODE,
         )
 
-    return tokenizer.batch_decode(
-        generated,
-        skip_special_tokens=True,
-    )[0].strip()
+    if not isinstance(translated, str):
+        raise RuntimeError("Translation runtime returned an unexpected response.")
+
+    translated = translated.strip()
+    if not translated:
+        raise RuntimeError("Translation runtime returned an empty response.")
+
+    if not has_meaningful_ol_chiki(translated):
+        raise RuntimeError(
+            "Translation output did not contain enough Ol Chiki text."
+        )
+
+    return translated
 
 
 init_cache()
@@ -224,10 +269,11 @@ def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         model=MODEL_NAME,
+        model_revision=MODEL_REVISION,
         model_loaded=_model is not None,
         source_language_code=SOURCE_LANGUAGE_CODE,
         target_language_code=TARGET_LANGUAGE_CODE,
-        device=str(DEVICE),
+        runtime="ONNX Runtime INT8 / CPU",
     )
 
 
@@ -240,7 +286,7 @@ def translate(request: TranslationRequest) -> TranslationResponse:
         raise HTTPException(status_code=422, detail="Text cannot be blank.")
 
     cached = get_cached_translation(text)
-    if cached is not None:
+    if cached is not None and has_meaningful_ol_chiki(cached):
         return TranslationResponse(
             translated_text=cached,
             latency_ms=round((time.perf_counter() - started) * 1000),
@@ -253,14 +299,8 @@ def translate(request: TranslationRequest) -> TranslationResponse:
         logger.exception("Translation failed")
         raise HTTPException(
             status_code=503,
-            detail="Translation model is unavailable.",
+            detail="Hindi to Santhali translation is currently unavailable.",
         ) from exc
-
-    if not translated:
-        raise HTTPException(
-            status_code=500,
-            detail="The model returned an empty translation.",
-        )
 
     save_translation(text, translated)
 
