@@ -8,9 +8,9 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-7F52FF?logo=kotlin&logoColor=white)
 ![Android](https://img.shields.io/badge/Android-SDK%2034-3DDC84?logo=android&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
-![NLLB](https://img.shields.io/badge/NLLB-200-orange)
+![IndicTrans2](https://img.shields.io/badge/IndicTrans2-INT8%20ONNX-orange)
 
-A full-stack translation prototype that sends Hindi text from an Android app to a FastAPI backend powered by Meta's NLLB model and returns Santhali text in the Ol Chiki script.
+A full-stack translation prototype that sends Hindi text from an Android app to a FastAPI backend powered by IndicTrans2 and returns Santhali text in the Ol Chiki script.
 
 [Android source](app/src/main/java/com/example/translationapp) · [Backend source](backend) · [Report a bug](https://github.com/adityashinde1537/TranslationApp/issues/new?template=bug_report.yml)
 
@@ -22,11 +22,25 @@ A full-stack translation prototype that sends Hindi text from an Android app to 
 
 1. The Android app accepts Hindi text written in Devanagari.
 2. Retrofit sends the text to the backend's `POST /translate` endpoint.
-3. The backend uses `facebook/nllb-200-distilled-600M`.
-4. Source language is configured as `hin_Deva`.
-5. Target language is configured as `sat_Olck`.
-6. The backend returns Santhali in Ol Chiki.
-7. Completed translations are cached in SQLite for faster repeated requests.
+3. The backend uses an INT8 ONNX export of IndicTrans2.
+4. Source language is `hin_Deva`.
+5. Target language is `sat_Olck`.
+6. The backend validates that the result contains meaningful Ol Chiki text.
+7. Completed translations are cached in SQLite.
+
+## Real model smoke test
+
+The previous NLLB setup failed real-output testing. The replacement IndicTrans2 model produced Ol Chiki output:
+
+```text
+नमस्ते, आप कैसे हैं?
+→ ᱦᱚᱞᱮ, ᱟᱢ ᱪᱮᱫ ᱞᱮᱠᱟ?
+
+आज मौसम अच्छा है।
+→ ᱛᱮᱦᱮᱧ ᱦᱚᱭᱦᱩᱫᱤᱥ ᱱᱟᱯᱟᱭ ᱠᱟᱱᱟ ᱾
+```
+
+Named entities can still show transliteration artifacts, so native-speaker review remains necessary.
 
 ## Architecture
 
@@ -39,7 +53,7 @@ FastAPI backend
    │
    ├── SQLite translation cache
    │
-   └── NLLB-200 distilled 600M
+   └── IndicTrans2 INT8 ONNX
            Hindi:    hin_Deva
            Santhali: sat_Olck
 ```
@@ -48,71 +62,40 @@ FastAPI backend
 
 ### Android
 
-- Kotlin + Jetpack Compose UI
-- Hindi → Santhali focused workflow
+- Kotlin + Jetpack Compose
+- Hindi → Santhali workflow
 - Retrofit API client
-- ViewModel-based translation state
+- ViewModel-based state
 - Loading and error states
-- Result latency display
+- Latency display
 - Cache-hit indicator
-- Configurable backend base URL
-- Cleartext HTTP enabled only for debug builds
+- Configurable backend URL
 
 ### Backend
 
 - FastAPI REST API
-- NLLB sequence-to-sequence translation
-- Lazy model loading
-- CUDA support when available
+- IndicTrans2 CPU inference through ONNX Runtime
+- Lazy model download/loading
+- Pinned model revision for reproducibility
 - SQLite translation cache
+- Ol Chiki output validation
 - Health endpoint
-- Input length validation
-- Serialized inference to reduce memory spikes
+- Input validation
 - Docker support
 
 ## Tech stack
 
 | Layer | Technology |
 | --- | --- |
-| Android language | Kotlin 1.9.0 |
-| Android UI | Jetpack Compose 1.5.4 + Material 3 |
-| Android networking | Retrofit 2.9.0 |
-| Android state | ViewModel + Compose state |
+| Android | Kotlin + Jetpack Compose |
+| Networking | Retrofit |
 | Backend | Python + FastAPI |
-| Translation model | `facebook/nllb-200-distilled-600M` |
-| Source language | Hindi — `hin_Deva` |
-| Target language | Santhali Ol Chiki — `sat_Olck` |
+| Translation | IndicTrans2 distilled 320M INT8 ONNX |
+| Runtime | ONNX Runtime CPU |
+| Source | Hindi — `hin_Deva` |
+| Target | Santhali Ol Chiki — `sat_Olck` |
 | Cache | SQLite |
 | CI | GitHub Actions |
-
-## Repository structure
-
-```text
-TranslationApp/
-├── app/
-│   ├── build.gradle
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       └── java/com/example/translationapp/
-│           ├── MainActivity.kt
-│           ├── data/
-│           │   ├── TranslationRepository.kt
-│           │   └── remote/
-│           └── ui/
-│               ├── TranslationViewModel.kt
-│               ├── screens/
-│               └── theme/
-├── backend/
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── main.py
-│   └── requirements.txt
-├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   └── workflows/
-├── CONTRIBUTING.md
-└── README.md
-```
 
 ## Run the backend
 
@@ -124,9 +107,7 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-On the first uncached translation, the backend may need to download and initialize the model.
-
-Check the service:
+Then check:
 
 ```bash
 curl http://127.0.0.1:8000/health
@@ -140,24 +121,15 @@ curl -X POST http://127.0.0.1:8000/translate \
   -d '{"text":"नमस्ते, आप कैसे हैं?"}'
 ```
 
-See [backend/README.md](backend/README.md) for Docker and environment-variable configuration.
+See [backend/README.md](backend/README.md) for more details.
 
 ## Run the Android app
-
-### Requirements
-
-- Android Studio
-- JDK 17
-- Android SDK 34
-- Running translation backend
 
 The debug build defaults to:
 
 ```text
 http://10.0.2.2:8000/
 ```
-
-This is the Android emulator address for a backend running on the development computer.
 
 To use another backend URL:
 
@@ -166,58 +138,31 @@ gradle :app:assembleDebug \
   -PTRANSLATION_API_BASE_URL=http://192.168.1.10:8000/
 ```
 
-For production, use an HTTPS backend URL. Release builds disable cleartext HTTP.
-
-## API contract
-
-### `POST /translate`
-
-Request:
-
-```json
-{
-  "text": "नमस्ते, आप कैसे हैं?"
-}
-```
-
-Response:
-
-```json
-{
-  "translated_text": "...",
-  "source_language": "Hindi",
-  "target_language": "Santhali (Ol Chiki)",
-  "latency_ms": 1234,
-  "cached": false
-}
-```
-
-### `GET /health`
-
-Reports the configured model, language codes, device, and whether the NLLB model has already been loaded.
+For production, use HTTPS.
 
 ## Current limitations
 
-- Translation quality depends on NLLB performance for this low-resource language pair.
-- First-run model download and initialization can be slow.
-- CPU inference may not meet a sub-3-second latency target.
-- The Android app still requires the backend to be reachable; the NLLB model is not running directly on-device.
-- Classroom or production output should be reviewed by fluent Santhali speakers.
+- Translation quality still needs native-speaker evaluation.
+- Named entities may contain transliteration artifacts.
+- The first request must download and initialize the model.
+- The Android app still requires a reachable backend.
+- The translation model is not yet running directly on-device.
 
 ## Roadmap
 
 - [x] Hindi → Santhali Android workflow
-- [x] FastAPI translation backend
-- [x] NLLB integration
+- [x] FastAPI backend
+- [x] Real Ol Chiki model output test
+- [x] Replace failing NLLB pipeline with IndicTrans2
 - [x] SQLite caching
 - [x] Loading and error states
 - [x] Android CI
 - [ ] Deploy the backend to a stable HTTPS endpoint
+- [ ] Add native-speaker accuracy evaluation
 - [ ] Add translation history
-- [ ] Add speech-to-text for Hindi
+- [ ] Add Hindi speech-to-text
 - [ ] Add Santhali text-to-speech
-- [ ] Evaluate accuracy with native-speaker test data
-- [ ] Explore an optimized on-device model for offline use
+- [ ] Explore direct on-device inference
 
 ## Contributing
 
