@@ -28,8 +28,8 @@ fun HomeScreen(onNavigateToTranslation: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Hindi → Santhali",
-            fontSize = 32.sp,
+            text = "Hindi • English • Marathi",
+            fontSize = 30.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center
@@ -38,7 +38,7 @@ fun HomeScreen(onNavigateToTranslation: () -> Unit) {
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Translate Hindi text into Santhali written in the Ol Chiki script.",
+            text = "Translate between all three languages in six directions.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground
@@ -47,7 +47,7 @@ fun HomeScreen(onNavigateToTranslation: () -> Unit) {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Powered by an NLLB translation service with local result caching.",
+            text = "Powered by IndicTrans2 ONNX, FastAPI and local result caching.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -1,20 +1,26 @@
 services:
   - type: web
-    name: hindi-santhali-translation-api
+    name: translationapp-api
     runtime: docker
     rootDir: backend
     plan: 1c-2g
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     envVars:
-      - key: MODEL_NAME
+      - key: INDIC_INDIC_MODEL_NAME
         value: hari31416/indictrans2-indic-indic-dist-320M-ONNX-int8
-      - key: MODEL_REVISION
+      - key: INDIC_INDIC_MODEL_REVISION
         value: b04956dee2f2a3e06e44bf09f8d654a6b81af99a
+      - key: EN_INDIC_MODEL_NAME
+        value: hari31416/indictrans2-en-indic-dist-200M-ONNX-int8
+      - key: EN_INDIC_MODEL_REVISION
+        value: main
+      - key: INDIC_EN_MODEL_NAME
+        value: hari31416/indictrans2-indic-en-dist-200M-ONNX-int8
+      - key: INDIC_EN_MODEL_REVISION
+        value: main
       - key: MAX_INPUT_CHARS
         value: "1500"
-      - key: MIN_OL_CHIKI_RATIO
-        value: "0.50"
       - key: CORS_ORIGINS
         value: "*"
       - key: LOG_LEVEL

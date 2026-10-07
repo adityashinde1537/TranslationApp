@@ -8,10 +8,18 @@ import com.example.translationapp.data.remote.TranslationServiceFactory
 class TranslationRepository(
     private val api: TranslationApi = TranslationServiceFactory.api
 ) {
-    suspend fun translate(text: String): Result<TranslationResponse> {
+    suspend fun translate(
+        text: String,
+        sourceLanguage: String,
+        targetLanguage: String
+    ): Result<TranslationResponse> {
         return runCatching {
             api.translate(
-                TranslationRequest(text = text.trim())
+                TranslationRequest(
+                    text = text.trim(),
+                    sourceLanguage = sourceLanguage,
+                    targetLanguage = targetLanguage
+                )
             )
         }
     }

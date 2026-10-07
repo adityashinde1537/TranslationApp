@@ -5,7 +5,11 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 
 data class TranslationRequest(
-    val text: String
+    val text: String,
+    @SerializedName("source_language")
+    val sourceLanguage: String,
+    @SerializedName("target_language")
+    val targetLanguage: String
 )
 
 data class TranslationResponse(

@@ -1,8 +1,8 @@
 <div align="center">
 
-# Hindi → Santhali TranslationApp
+# TranslationApp
 
-### Android + FastAPI translation system for Hindi to Santhali in Ol Chiki
+### Hindi ↔ English ↔ Marathi Android translation app
 
 [![Project CI](https://github.com/adityashinde1537/TranslationApp/actions/workflows/android.yml/badge.svg)](https://github.com/adityashinde1537/TranslationApp/actions/workflows/android.yml)
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-7F52FF?logo=kotlin&logoColor=white)
@@ -10,7 +10,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![IndicTrans2](https://img.shields.io/badge/IndicTrans2-INT8%20ONNX-orange)
 
-A full-stack translation prototype that sends Hindi text from an Android app to a FastAPI backend powered by IndicTrans2 and returns Santhali text in the Ol Chiki script.
+A full-stack Android translation project for Hindi, English and Marathi using a FastAPI backend, IndicTrans2 ONNX models and SQLite result caching.
 
 [Android source](app/src/main/java/com/example/translationapp) · [Backend source](backend) · [Report a bug](https://github.com/adityashinde1537/TranslationApp/issues/new?template=bug_report.yml)
 
@@ -18,29 +18,16 @@ A full-stack translation prototype that sends Hindi text from an Android app to 
 
 ---
 
-## What it does
+## Supported translations
 
-1. The Android app accepts Hindi text written in Devanagari.
-2. Retrofit sends the text to the backend's `POST /translate` endpoint.
-3. The backend uses an INT8 ONNX export of IndicTrans2.
-4. Source language is `hin_Deva`.
-5. Target language is `sat_Olck`.
-6. The backend validates that the result contains meaningful Ol Chiki text.
-7. Completed translations are cached in SQLite.
+- Hindi → English
+- Hindi → Marathi
+- English → Hindi
+- English → Marathi
+- Marathi → Hindi
+- Marathi → English
 
-## Real model smoke test
-
-The previous NLLB setup failed real-output testing. The replacement IndicTrans2 model produced Ol Chiki output:
-
-```text
-नमस्ते, आप कैसे हैं?
-→ ᱦᱚᱞᱮ, ᱟᱢ ᱪᱮᱫ ᱞᱮᱠᱟ?
-
-आज मौसम अच्छा है।
-→ ᱛᱮᱦᱮᱧ ᱦᱚᱭᱦᱩᱫᱤᱥ ᱱᱟᱯᱟᱭ ᱠᱟᱱᱟ ᱾
-```
-
-Named entities can still show transliteration artifacts, so native-speaker review remains necessary.
+The Android app includes source and target language selectors plus a one-tap swap button.
 
 ## Architecture
 
@@ -48,24 +35,36 @@ Named entities can still show transliteration artifacts, so native-speaker revie
 Android app
    │
    │  POST /translate
+   │  text + source_language + target_language
    ▼
 FastAPI backend
    │
    ├── SQLite translation cache
    │
    └── IndicTrans2 INT8 ONNX
-           Hindi:    hin_Deva
-           Santhali: sat_Olck
+         ├── English → Indic
+         ├── Indic → English
+         └── Indic → Indic
 ```
+
+Language codes used by the models:
+
+| Language | API code | IndicTrans2 code |
+| --- | --- | --- |
+| Hindi | `hi` | `hin_Deva` |
+| English | `en` | `eng_Latn` |
+| Marathi | `mr` | `mar_Deva` |
 
 ## Features
 
 ### Android
 
 - Kotlin + Jetpack Compose
-- Hindi → Santhali workflow
+- Hindi, English and Marathi selectors
+- Six translation directions
+- One-tap language swap
 - Retrofit API client
-- ViewModel-based state
+- ViewModel-based UI state
 - Loading and error states
 - Latency display
 - Cache-hit indicator
@@ -75,27 +74,22 @@ FastAPI backend
 
 - FastAPI REST API
 - IndicTrans2 CPU inference through ONNX Runtime
-- Lazy model download/loading
-- Pinned model revision for reproducibility
+- Automatic model selection by translation direction
+- Lazy model loading to reduce memory usage
 - SQLite translation cache
-- Ol Chiki output validation
 - Health endpoint
-- Input validation
+- Input and language validation
 - Docker support
 
-## Tech stack
+## Translation models
 
-| Layer | Technology |
-| --- | --- |
-| Android | Kotlin + Jetpack Compose |
-| Networking | Retrofit |
-| Backend | Python + FastAPI |
-| Translation | IndicTrans2 distilled 320M INT8 ONNX |
-| Runtime | ONNX Runtime CPU |
-| Source | Hindi — `hin_Deva` |
-| Target | Santhali Ol Chiki — `sat_Olck` |
-| Cache | SQLite |
-| CI | GitHub Actions |
+The backend uses three INT8 ONNX model families:
+
+- `hari31416/indictrans2-en-indic-dist-200M-ONNX-int8`
+- `hari31416/indictrans2-indic-en-dist-200M-ONNX-int8`
+- `hari31416/indictrans2-indic-indic-dist-320M-ONNX-int8`
+
+Only the model needed for the current direction is kept active in memory.
 
 ## Run the backend
 
@@ -113,15 +107,15 @@ Then check:
 curl http://127.0.0.1:8000/health
 ```
 
-Translate:
+Example translation:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/translate \
   -H "Content-Type: application/json" \
-  -d '{"text":"नमस्ते, आप कैसे हैं?"}'
+  -d '{"text":"नमस्ते","source_language":"hi","target_language":"en"}'
 ```
 
-See [backend/README.md](backend/README.md) for more details.
+See [backend/README.md](backend/README.md) for backend details.
 
 ## Run the Android app
 
@@ -142,26 +136,25 @@ For production, use HTTPS.
 
 ## Current limitations
 
-- Translation quality still needs native-speaker evaluation.
-- Named entities may contain transliteration artifacts.
-- The first request must download and initialize the model.
-- The Android app still requires a reachable backend.
-- The translation model is not yet running directly on-device.
+- The first request for a model direction must download and initialize that model.
+- Switching between English→Indic, Indic→English and Indic→Indic can require loading a different model.
+- Translation quality should be reviewed before high-stakes or production use.
+- The Android app requires a reachable backend.
+- Models are not yet running directly on-device.
 
 ## Roadmap
 
-- [x] Hindi → Santhali Android workflow
+- [x] Hindi ↔ English translation
+- [x] Hindi ↔ Marathi translation
+- [x] English ↔ Marathi translation
 - [x] FastAPI backend
-- [x] Real Ol Chiki model output test
-- [x] Replace failing NLLB pipeline with IndicTrans2
+- [x] IndicTrans2 ONNX inference
 - [x] SQLite caching
 - [x] Loading and error states
 - [x] Android CI
-- [ ] Deploy the backend to a stable HTTPS endpoint
-- [ ] Add native-speaker accuracy evaluation
 - [ ] Add translation history
-- [ ] Add Hindi speech-to-text
-- [ ] Add Santhali text-to-speech
+- [ ] Add speech-to-text
+- [ ] Add text-to-speech
 - [ ] Explore direct on-device inference
 
 ## Contributing

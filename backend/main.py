@@ -1,3 +1,4 @@
+import gc
 import hashlib
 import importlib.util
 import logging
@@ -6,27 +7,47 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import snapshot_download
 from pydantic import BaseModel, Field
 
-MODEL_NAME = os.getenv(
-    "MODEL_NAME",
-    "hari31416/indictrans2-indic-indic-dist-320M-ONNX-int8",
-)
-MODEL_REVISION = os.getenv(
-    "MODEL_REVISION",
-    "b04956dee2f2a3e06e44bf09f8d654a6b81af99a",
-)
-SOURCE_LANGUAGE_CODE = "hin_Deva"
-TARGET_LANGUAGE_CODE = "sat_Olck"
-SOURCE_LANGUAGE_NAME = "Hindi"
-TARGET_LANGUAGE_NAME = "Santhali (Ol Chiki)"
 MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "1500"))
-MIN_OL_CHIKI_RATIO = float(os.getenv("MIN_OL_CHIKI_RATIO", "0.50"))
+
+LANGUAGES = {
+    "hi": {"name": "Hindi", "code": "hin_Deva"},
+    "en": {"name": "English", "code": "eng_Latn"},
+    "mr": {"name": "Marathi", "code": "mar_Deva"},
+}
+
+MODEL_SPECS = {
+    "indic-indic": {
+        "name": os.getenv(
+            "INDIC_INDIC_MODEL_NAME",
+            "hari31416/indictrans2-indic-indic-dist-320M-ONNX-int8",
+        ),
+        "revision": os.getenv(
+            "INDIC_INDIC_MODEL_REVISION",
+            "b04956dee2f2a3e06e44bf09f8d654a6b81af99a",
+        ),
+    },
+    "en-indic": {
+        "name": os.getenv(
+            "EN_INDIC_MODEL_NAME",
+            "hari31416/indictrans2-en-indic-dist-200M-ONNX-int8",
+        ),
+        "revision": os.getenv("EN_INDIC_MODEL_REVISION", "main"),
+    },
+    "indic-en": {
+        "name": os.getenv(
+            "INDIC_EN_MODEL_NAME",
+            "hari31416/indictrans2-indic-en-dist-200M-ONNX-int8",
+        ),
+        "revision": os.getenv("INDIC_EN_MODEL_REVISION", "main"),
+    },
+}
 
 DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "translations.db"
 CACHE_DB_PATH = Path(os.getenv("TRANSLATION_CACHE_DB", str(DEFAULT_CACHE_PATH)))
@@ -35,11 +56,10 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("translation-backend")
 
 app = FastAPI(
-    title="Hindi to Santhali Translation API",
-    version="2.0.0",
+    title="Hindi, English and Marathi Translation API",
+    version="3.0.0",
     description=(
-        "IndicTrans2 INT8 ONNX-powered Hindi to Santhali "
-        "(Ol Chiki) translation service."
+        "IndicTrans2 INT8 ONNX translation service for Hindi, English and Marathi."
     ),
 )
 
@@ -56,9 +76,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_model: Any | None = None
+_active_runtime: Any | None = None
+_active_model_key: str | None = None
 _runtime_lock = threading.Lock()
 _inference_lock = threading.Lock()
+
+LanguageCode = Literal["hi", "en", "mr"]
 
 
 class TranslationRequest(BaseModel):
@@ -66,25 +89,26 @@ class TranslationRequest(BaseModel):
         ...,
         min_length=1,
         max_length=MAX_INPUT_CHARS,
-        description="Hindi text written in Devanagari.",
+        description="Text to translate.",
     )
+    source_language: LanguageCode = "hi"
+    target_language: LanguageCode = "en"
 
 
 class TranslationResponse(BaseModel):
     translated_text: str
-    source_language: str = SOURCE_LANGUAGE_NAME
-    target_language: str = TARGET_LANGUAGE_NAME
+    source_language: str
+    target_language: str
     latency_ms: int
     cached: bool
 
 
 class HealthResponse(BaseModel):
     status: str
-    model: str
-    model_revision: str
     model_loaded: bool
-    source_language_code: str
-    target_language_code: str
+    active_model: str | None
+    supported_languages: dict[str, str]
+    supported_directions: list[str]
     runtime: str
 
 
@@ -108,21 +132,45 @@ def init_cache() -> None:
         connection.commit()
 
 
-def cache_key_for(text: str) -> str:
+def model_key_for(source_language: str, target_language: str) -> str:
+    if source_language == "en":
+        return "en-indic"
+    if target_language == "en":
+        return "indic-en"
+    return "indic-indic"
+
+
+def model_spec_for(source_language: str, target_language: str) -> dict[str, str]:
+    return MODEL_SPECS[model_key_for(source_language, target_language)]
+
+
+def cache_key_for(
+    text: str,
+    source_language: str,
+    target_language: str,
+) -> str:
+    source_code = LANGUAGES[source_language]["code"]
+    target_code = LANGUAGES[target_language]["code"]
+    model_spec = model_spec_for(source_language, target_language)
+
     value = "|".join(
         [
-            MODEL_NAME,
-            MODEL_REVISION,
-            SOURCE_LANGUAGE_CODE,
-            TARGET_LANGUAGE_CODE,
+            model_spec["name"],
+            model_spec["revision"],
+            source_code,
+            target_code,
             text,
         ]
     )
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def get_cached_translation(text: str) -> str | None:
-    key = cache_key_for(text)
+def get_cached_translation(
+    text: str,
+    source_language: str,
+    target_language: str,
+) -> str | None:
+    key = cache_key_for(text, source_language, target_language)
     try:
         with sqlite3.connect(CACHE_DB_PATH, timeout=30) as connection:
             row = connection.execute(
@@ -135,8 +183,17 @@ def get_cached_translation(text: str) -> str | None:
         return None
 
 
-def save_translation(text: str, translated_text: str) -> None:
-    key = cache_key_for(text)
+def save_translation(
+    text: str,
+    translated_text: str,
+    source_language: str,
+    target_language: str,
+) -> None:
+    key = cache_key_for(text, source_language, target_language)
+    source_code = LANGUAGES[source_language]["code"]
+    target_code = LANGUAGES[target_language]["code"]
+    model_spec = model_spec_for(source_language, target_language)
+
     try:
         with sqlite3.connect(CACHE_DB_PATH, timeout=30) as connection:
             connection.execute(
@@ -155,9 +212,9 @@ def save_translation(text: str, translated_text: str) -> None:
                     key,
                     text,
                     translated_text,
-                    f"{MODEL_NAME}@{MODEL_REVISION}",
-                    SOURCE_LANGUAGE_CODE,
-                    TARGET_LANGUAGE_CODE,
+                    f"{model_spec['name']}@{model_spec['revision']}",
+                    source_code,
+                    target_code,
                 ),
             )
             connection.commit()
@@ -165,15 +222,13 @@ def save_translation(text: str, translated_text: str) -> None:
         logger.exception("Translation cache write failed")
 
 
-def _load_runtime_from_snapshot(snapshot_path: str) -> Any:
+def _load_runtime_from_snapshot(snapshot_path: str, model_key: str) -> Any:
     helper_path = Path(snapshot_path) / "translate.py"
     if not helper_path.exists():
         raise RuntimeError("IndicTrans2 ONNX helper was not found in the model snapshot.")
 
-    spec = importlib.util.spec_from_file_location(
-        "translationapp_indictrans_onnx",
-        helper_path,
-    )
+    module_name = f"translationapp_{model_key.replace('-', '_')}"
+    spec = importlib.util.spec_from_file_location(module_name, helper_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Could not load IndicTrans2 ONNX helper module.")
 
@@ -187,62 +242,55 @@ def _load_runtime_from_snapshot(snapshot_path: str) -> Any:
     return runtime_class(snapshot_path)
 
 
-def get_runtime() -> Any:
-    global _model
+def get_runtime(model_key: str) -> Any:
+    global _active_runtime, _active_model_key
 
-    if _model is not None:
-        return _model
+    if _active_runtime is not None and _active_model_key == model_key:
+        return _active_runtime
 
     with _runtime_lock:
-        if _model is None:
-            logger.info(
-                "Downloading/loading translation model %s at revision %s",
-                MODEL_NAME,
-                MODEL_REVISION,
-            )
-            snapshot_path = snapshot_download(
-                repo_id=MODEL_NAME,
-                revision=MODEL_REVISION,
-            )
-            _model = _load_runtime_from_snapshot(snapshot_path)
-            logger.info("IndicTrans2 ONNX translation model loaded")
+        if _active_runtime is not None and _active_model_key == model_key:
+            return _active_runtime
 
-    return _model
+        model_spec = MODEL_SPECS[model_key]
+        logger.info(
+            "Downloading/loading translation model %s at revision %s",
+            model_spec["name"],
+            model_spec["revision"],
+        )
 
+        _active_runtime = None
+        _active_model_key = None
+        gc.collect()
 
-def ol_chiki_letter_ratio(text: str) -> float:
-    alphabetic = [character for character in text if character.isalpha()]
-    if not alphabetic:
-        return 0.0
+        snapshot_path = snapshot_download(
+            repo_id=model_spec["name"],
+            revision=model_spec["revision"],
+        )
+        runtime = _load_runtime_from_snapshot(snapshot_path, model_key)
 
-    ol_chiki_letters = sum(
-        1
-        for character in alphabetic
-        if 0x1C5A <= ord(character) <= 0x1C7F
-    )
-    return ol_chiki_letters / len(alphabetic)
+        _active_runtime = runtime
+        _active_model_key = model_key
+        logger.info("IndicTrans2 ONNX model loaded for %s", model_key)
+
+    return _active_runtime
 
 
-def has_meaningful_ol_chiki(text: str) -> bool:
-    ol_chiki_letters = sum(
-        1
-        for character in text
-        if 0x1C5A <= ord(character) <= 0x1C7F
-    )
-    return (
-        ol_chiki_letters >= 2
-        and ol_chiki_letter_ratio(text) >= MIN_OL_CHIKI_RATIO
-    )
-
-
-def translate_text(text: str) -> str:
-    runtime = get_runtime()
+def translate_text(
+    text: str,
+    source_language: str,
+    target_language: str,
+) -> str:
+    source_code = LANGUAGES[source_language]["code"]
+    target_code = LANGUAGES[target_language]["code"]
+    model_key = model_key_for(source_language, target_language)
 
     with _inference_lock:
+        runtime = get_runtime(model_key)
         translated = runtime.translate(
             text,
-            src_lang=SOURCE_LANGUAGE_CODE,
-            tgt_lang=TARGET_LANGUAGE_CODE,
+            src_lang=source_code,
+            tgt_lang=target_code,
         )
 
     if not isinstance(translated, str):
@@ -251,11 +299,6 @@ def translate_text(text: str) -> str:
     translated = translated.strip()
     if not translated:
         raise RuntimeError("Translation runtime returned an empty response.")
-
-    if not has_meaningful_ol_chiki(translated):
-        raise RuntimeError(
-            "Translation output did not contain enough Ol Chiki text."
-        )
 
     return translated
 
@@ -268,12 +311,20 @@ init_cache()
 def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
-        model=MODEL_NAME,
-        model_revision=MODEL_REVISION,
-        model_loaded=_model is not None,
-        source_language_code=SOURCE_LANGUAGE_CODE,
-        target_language_code=TARGET_LANGUAGE_CODE,
-        runtime="ONNX Runtime INT8 / CPU",
+        model_loaded=_active_runtime is not None,
+        active_model=_active_model_key,
+        supported_languages={
+            code: language["name"] for code, language in LANGUAGES.items()
+        },
+        supported_directions=[
+            "Hindi → English",
+            "Hindi → Marathi",
+            "English → Hindi",
+            "English → Marathi",
+            "Marathi → Hindi",
+            "Marathi → English",
+        ],
+        runtime="IndicTrans2 ONNX Runtime INT8 / CPU",
     )
 
 
@@ -281,31 +332,64 @@ def health() -> HealthResponse:
 def translate(request: TranslationRequest) -> TranslationResponse:
     started = time.perf_counter()
     text = request.text.strip()
+    source_language = request.source_language
+    target_language = request.target_language
 
     if not text:
         raise HTTPException(status_code=422, detail="Text cannot be blank.")
 
-    cached = get_cached_translation(text)
-    if cached is not None and has_meaningful_ol_chiki(cached):
+    if source_language == target_language:
+        raise HTTPException(
+            status_code=422,
+            detail="Source and target languages must be different.",
+        )
+
+    cached = get_cached_translation(
+        text,
+        source_language,
+        target_language,
+    )
+    if cached is not None:
         return TranslationResponse(
             translated_text=cached,
+            source_language=LANGUAGES[source_language]["name"],
+            target_language=LANGUAGES[target_language]["name"],
             latency_ms=round((time.perf_counter() - started) * 1000),
             cached=True,
         )
 
     try:
-        translated = translate_text(text)
+        translated = translate_text(
+            text,
+            source_language,
+            target_language,
+        )
     except Exception as exc:
-        logger.exception("Translation failed")
+        logger.exception(
+            "Translation failed for %s -> %s",
+            source_language,
+            target_language,
+        )
         raise HTTPException(
             status_code=503,
-            detail="Hindi to Santhali translation is currently unavailable.",
+            detail=(
+                f"{LANGUAGES[source_language]['name']} to "
+                f"{LANGUAGES[target_language]['name']} translation "
+                "is currently unavailable."
+            ),
         ) from exc
 
-    save_translation(text, translated)
+    save_translation(
+        text,
+        translated,
+        source_language,
+        target_language,
+    )
 
     return TranslationResponse(
         translated_text=translated,
+        source_language=LANGUAGES[source_language]["name"],
+        target_language=LANGUAGES[target_language]["name"],
         latency_ms=round((time.perf_counter() - started) * 1000),
         cached=False,
     )
